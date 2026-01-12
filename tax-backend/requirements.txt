@@ -6,3 +6,6 @@ pandas
 pypdf
 gspread
 google-auth
+feedparser
+beautifulsoup4
+requests
