@@ -26,10 +26,12 @@ export const LegalNotices = ({ clientId, isDark }) => {
     const fetchNotices = async () => {
         setLoading(true);
         try {
+            const token = localStorage.getItem('taxai_token');
+            const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
             const url = clientId
                 ? `${API_URL}/legal/notices?client_id=${clientId}`
                 : `${API_URL}/legal/notices`;
-            const res = await fetch(url);
+            const res = await fetch(url, { headers });
             const data = await res.json();
             setNotices(data.notices || []);
             setSummary(data.summary || { total: 0, pending: 0, urgent: 0 });
@@ -50,8 +52,11 @@ export const LegalNotices = ({ clientId, isDark }) => {
         if (clientId) formData.append('client_id', clientId);
 
         try {
+            const token = localStorage.getItem('taxai_token');
+            const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
             const res = await fetch(`${API_URL}/legal/analyze-notice`, {
                 method: 'POST',
+                headers,
                 body: formData
             });
             const result = await res.json();
@@ -101,8 +106,8 @@ export const LegalNotices = ({ clientId, isDark }) => {
 
                 {/* Upload Button */}
                 <label className={`px-4 py-2.5 rounded-xl font-medium cursor-pointer flex items-center gap-2 transition-all ${uploading
-                        ? 'bg-gray-500/20 text-gray-400 cursor-wait'
-                        : 'bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-500 hover:to-blue-500'
+                    ? 'bg-gray-500/20 text-gray-400 cursor-wait'
+                    : 'bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-500 hover:to-blue-500'
                     }`}>
                     {uploading ? (
                         <>
@@ -216,8 +221,8 @@ export const LegalNotices = ({ clientId, isDark }) => {
                                         )}
                                     </div>
                                     <span className={`px-2 py-1 rounded text-xs font-medium ${notice.status === 'submitted' ? 'bg-green-500/20 text-green-400' :
-                                            notice.status === 'pending' ? 'bg-yellow-500/20 text-yellow-400' :
-                                                'bg-gray-500/20 text-gray-400'
+                                        notice.status === 'pending' ? 'bg-yellow-500/20 text-yellow-400' :
+                                            'bg-gray-500/20 text-gray-400'
                                         }`}>
                                         {notice.status}
                                     </span>
@@ -262,7 +267,9 @@ const NoticeDetailModal = ({ notice, onClose, onUpdate, isDark }) => {
     const fetchDetail = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${API_URL}/legal/notice/${notice.id}`);
+            const token = localStorage.getItem('taxai_token');
+            const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+            const res = await fetch(`${API_URL}/legal/notice/${notice.id}`, { headers });
             const data = await res.json();
             setFullNotice(data);
             setEditedReply(data.final_reply || data.draft_reply || '');
@@ -275,8 +282,11 @@ const NoticeDetailModal = ({ notice, onClose, onUpdate, isDark }) => {
 
     const handleMarkSubmitted = async () => {
         try {
+            const token = localStorage.getItem('taxai_token');
+            const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
             await fetch(`${API_URL}/legal/notice/${notice.id}?status=submitted&final_reply=${encodeURIComponent(editedReply)}`, {
-                method: 'PUT'
+                method: 'PUT',
+                headers
             });
             onUpdate();
             onClose();

@@ -1,0 +1,94 @@
+INFO:     Will watch for changes in these directories: ['/Users/arnavbansal/Desktop/GST_agent/tax-backend']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [13014] using StatReload
+INFO:OpenRouterClient:Initialized 10 OpenRouter API keys.
+INFO:     Started server process [13069]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+Warning: Could not initialize users table: Cannot add a UNIQUE column
+🛡️ Backup created: backups/tax_backup_20260216_202747.db
+✅ Database initialized with 8 tables:
+   1. clients - Multi-tenant client management
+   2. vendors - Smart vendor master
+   3. documents - Enhanced invoice storage
+   4. bank_transactions - Bank statement line items
+   5. communications - WhatsApp/Email/SMS log
+   6. message_templates - Communication templates
+   7. users - Multi-user support
+   8. invoices - Legacy backward compatibility
+✅ Communication System endpoints loaded!
+📱 Available endpoints:
+   GET  /communications/scheduled
+   GET  /communications/recent
+   GET  /templates
+   POST /whatsapp/send
+   POST /email/send
+   POST /sms/send
+   POST /calls/schedule
+   GET  /communications/analytics
+✅ Client Management System loaded!
+📊 Client endpoints:
+   GET    /clients
+   GET    /clients/{id}
+   POST   /clients
+   PUT    /clients/{id}
+   DELETE /clients/{id}
+   GET    /clients/{id}/documents
+✅ Vendor Master System loaded!
+🏪 Vendor endpoints:
+   GET  /vendors
+   GET  /vendors/autocomplete?q=search
+   GET  /vendors/{id}
+   POST /vendors
+   PUT  /vendors/{id}
+✅ Review & Approval Workflow loaded!
+📝 Review endpoints:
+   GET  /documents/pending-review
+   PUT  /documents/{id}/review
+   PUT  /documents/{id}/add-note
+   GET  /documents/stats
+✅ Triage Area (Unassigned Documents) loaded!
+📥 Triage endpoints:
+   GET  /documents/unassigned
+   PUT  /documents/{id}/assign
+   PUT  /documents/bulk-assign
+   GET  /triage/stats
+✅ HSN, Ledger, and Group Intelligence System loaded!
+📚 Loaded 19 common HSN codes
+🏷️ Loaded 24 ledger mappings
+📁 Loaded 21 group mappings
+❌ Error loading WhatsApp endpoints: name 'app' is not defined
+🚀 Pipeline started: 5 OCR + 5 Logic + 2 Save workers
+🚀 Async Pipeline Workers started!
+👁️ OCR Worker 0 started
+👁️ OCR Worker 1 started
+👁️ OCR Worker 2 started
+👁️ OCR Worker 3 started
+👁️ OCR Worker 4 started
+🧠 Logic Worker 0 started
+🧠 Logic Worker 1 started
+🧠 Logic Worker 2 started
+🧠 Logic Worker 3 started
+🧠 Logic Worker 4 started
+💾 Save Worker 0 started
+💾 Save Worker 1 started
+INFO:     127.0.0.1:63442 - "OPTIONS /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63443 - "OPTIONS /auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63442 - "GET /auth/me HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:63443 - "GET /auth/me HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:63443 - "OPTIONS /history HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63442 - "OPTIONS /clients HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63444 - "OPTIONS /documents/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63443 - "OPTIONS /triage/stats HTTP/1.1" 200 OK
+✅ /history returned 17 invoices for user_id=1
+INFO:     127.0.0.1:63445 - "GET /history HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63442 - "GET /documents/stats HTTP/1.1" 200 OK
+✅ /history returned 17 invoices for user_id=1
+INFO:     127.0.0.1:63443 - "GET /history HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63442 - "GET /documents/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63446 - "GET /clients HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63444 - "GET /triage/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63446 - "GET /clients HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63444 - "GET /triage/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63448 - "GET /api/gst-news/ai-summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63448 - "GET /api/gst-news/ai-summary HTTP/1.1" 200 OK

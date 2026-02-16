@@ -1,4 +1,4 @@
-# 🧾 Tax.AI - AI-Powered GST Compliance System
+# 🧾 KAIRO - AI-Powered GST Compliance System
 
 > An enterprise-grade Mini-ERP for CA offices that automates invoice processing using Google Gemini AI.
 

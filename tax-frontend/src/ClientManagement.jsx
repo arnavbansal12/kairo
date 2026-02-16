@@ -73,9 +73,13 @@ const ClientFormModal = ({ isOpen, onClose, client, onSave, isDark }) => {
                 ? `${API_BASE}/clients/${client.id}`
                 : `${API_BASE}/clients`;
 
+            const token = localStorage.getItem('taxai_token');
             const response = await fetch(url, {
                 method: client ? 'PUT' : 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify(formData)
             });
 
@@ -97,8 +101,8 @@ const ClientFormModal = ({ isOpen, onClose, client, onSave, isDark }) => {
     if (!isOpen) return null;
 
     const inputClass = `w-full px-4 py-3 rounded-xl border transition-all focus:outline-none ${isDark
-            ? 'bg-black/30 border-white/10 text-white focus:border-purple-500'
-            : 'bg-white border-gray-200 text-gray-900 focus:border-blue-500'
+        ? 'bg-black/30 border-white/10 text-white focus:border-purple-500'
+        : 'bg-white border-gray-200 text-gray-900 focus:border-blue-500'
         }`;
 
     const labelClass = `block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`;
@@ -109,8 +113,8 @@ const ClientFormModal = ({ isOpen, onClose, client, onSave, isDark }) => {
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 className={`w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-3xl border ${isDark
-                        ? 'bg-gradient-to-br from-gray-900 to-black border-white/10'
-                        : 'bg-white border-gray-200'
+                    ? 'bg-gradient-to-br from-gray-900 to-black border-white/10'
+                    : 'bg-white border-gray-200'
                     }`}
             >
                 {/* Header */}
@@ -319,8 +323,8 @@ const ClientFormModal = ({ isOpen, onClose, client, onSave, isDark }) => {
                             type="button"
                             onClick={onClose}
                             className={`px-6 py-3 rounded-xl font-medium transition-colors ${isDark
-                                    ? 'bg-white/10 text-white hover:bg-white/20'
-                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                ? 'bg-white/10 text-white hover:bg-white/20'
+                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                 }`}
                         >
                             Cancel
@@ -329,8 +333,8 @@ const ClientFormModal = ({ isOpen, onClose, client, onSave, isDark }) => {
                             onClick={handleSubmit}
                             disabled={loading}
                             className={`px-6 py-3 rounded-xl font-bold transition-colors flex items-center gap-2 ${isDark
-                                    ? 'bg-purple-600 hover:bg-purple-500 text-white'
-                                    : 'bg-blue-600 hover:bg-blue-500 text-white'
+                                ? 'bg-purple-600 hover:bg-purple-500 text-white'
+                                : 'bg-blue-600 hover:bg-blue-500 text-white'
                                 } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                             {loading ? (
@@ -364,11 +368,24 @@ export const ClientManagement = ({ isDark }) => {
     // Fetch clients
     const fetchClients = async () => {
         try {
-            const response = await fetch(`${API_BASE}/clients`);
+            const token = localStorage.getItem('taxai_token');
+            const response = await fetch(`${API_BASE}/clients`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (!response.ok) {
+                console.error('Failed to fetch clients:', response.status);
+                setClients([]); // Set empty array instead of crashing
+                return;
+            }
+
             const data = await response.json();
-            setClients(data);
+            setClients(Array.isArray(data) ? data : []); // Ensure data is always an array
         } catch (err) {
             console.error('Error fetching clients:', err);
+            setClients([]); // Set empty array on error
         } finally {
             setLoading(false);
         }
@@ -407,7 +424,13 @@ export const ClientManagement = ({ isDark }) => {
         if (!confirm('Are you sure you want to deactivate this client?')) return;
 
         try {
-            await fetch(`${API_BASE}/clients/${clientId}`, { method: 'DELETE' });
+            const token = localStorage.getItem('taxai_token');
+            await fetch(`${API_BASE}/clients/${clientId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
             fetchClients();
         } catch (err) {
             console.error('Error deleting client:', err);
@@ -453,8 +476,8 @@ export const ClientManagement = ({ isDark }) => {
                     <button
                         onClick={() => { setEditingClient(null); setShowForm(true); }}
                         className={`px-5 py-3 rounded-xl font-bold transition-all flex items-center gap-2 ${isDark
-                                ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/25'
-                                : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/25'
+                            ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/25'
+                            : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/25'
                             }`}
                     >
                         <Plus className="w-5 h-5" />
@@ -472,8 +495,8 @@ export const ClientManagement = ({ isDark }) => {
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             className={`w-full pl-12 pr-4 py-3 rounded-xl border transition-all focus:outline-none ${isDark
-                                    ? 'bg-black/30 border-white/10 text-white placeholder-gray-500 focus:border-purple-500'
-                                    : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-blue-500'
+                                ? 'bg-black/30 border-white/10 text-white placeholder-gray-500 focus:border-purple-500'
+                                : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-blue-500'
                                 }`}
                         />
                     </div>
@@ -482,8 +505,8 @@ export const ClientManagement = ({ isDark }) => {
                         value={statusFilter}
                         onChange={(e) => setStatusFilter(e.target.value)}
                         className={`px-4 py-3 rounded-xl border transition-all focus:outline-none ${isDark
-                                ? 'bg-black/30 border-white/10 text-white focus:border-purple-500'
-                                : 'bg-white border-gray-200 text-gray-900 focus:border-blue-500'
+                            ? 'bg-black/30 border-white/10 text-white focus:border-purple-500'
+                            : 'bg-white border-gray-200 text-gray-900 focus:border-blue-500'
                             }`}
                     >
                         <option value="all">All Status</option>
@@ -515,8 +538,8 @@ export const ClientManagement = ({ isDark }) => {
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 className={`p-5 rounded-2xl border transition-all hover:shadow-lg ${isDark
-                                        ? 'bg-white/5 border-white/10 hover:bg-white/10'
-                                        : 'bg-white border-gray-200 hover:shadow-gray-200/50'
+                                    ? 'bg-white/5 border-white/10 hover:bg-white/10'
+                                    : 'bg-white border-gray-200 hover:shadow-gray-200/50'
                                     }`}
                             >
                                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -524,12 +547,12 @@ export const ClientManagement = ({ isDark }) => {
                                     <div className="flex-1">
                                         <div className="flex items-start gap-4">
                                             <div className={`p-3 rounded-xl ${client.status === 'Active'
-                                                    ? (isDark ? 'bg-green-500/20' : 'bg-green-100')
-                                                    : (isDark ? 'bg-gray-500/20' : 'bg-gray-100')
+                                                ? (isDark ? 'bg-green-500/20' : 'bg-green-100')
+                                                : (isDark ? 'bg-gray-500/20' : 'bg-gray-100')
                                                 }`}>
                                                 <Building2 className={`w-6 h-6 ${client.status === 'Active'
-                                                        ? (isDark ? 'text-green-400' : 'text-green-600')
-                                                        : (isDark ? 'text-gray-400' : 'text-gray-500')
+                                                    ? (isDark ? 'text-green-400' : 'text-green-600')
+                                                    : (isDark ? 'text-gray-400' : 'text-gray-500')
                                                     }`} />
                                             </div>
                                             <div className="flex-1">
@@ -538,8 +561,8 @@ export const ClientManagement = ({ isDark }) => {
                                                         {client.company_name}
                                                     </h3>
                                                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${client.status === 'Active'
-                                                            ? (isDark ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700')
-                                                            : (isDark ? 'bg-gray-500/20 text-gray-400' : 'bg-gray-100 text-gray-500')
+                                                        ? (isDark ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700')
+                                                        : (isDark ? 'bg-gray-500/20 text-gray-400' : 'bg-gray-100 text-gray-500')
                                                         }`}>
                                                         {client.status}
                                                     </span>
@@ -589,8 +612,8 @@ export const ClientManagement = ({ isDark }) => {
                                         <button
                                             onClick={() => callClient(client.phone)}
                                             className={`p-3 rounded-xl transition-colors ${client.phone
-                                                    ? (isDark ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : 'bg-green-100 text-green-600 hover:bg-green-200')
-                                                    : (isDark ? 'bg-gray-500/20 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed')
+                                                ? (isDark ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : 'bg-green-100 text-green-600 hover:bg-green-200')
+                                                : (isDark ? 'bg-gray-500/20 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed')
                                                 }`}
                                             title={client.phone ? `Call ${client.phone}` : 'No phone number'}
                                         >
@@ -599,8 +622,8 @@ export const ClientManagement = ({ isDark }) => {
                                         <button
                                             onClick={() => openWhatsApp(client.phone)}
                                             className={`p-3 rounded-xl transition-colors ${client.phone
-                                                    ? (isDark ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : 'bg-green-100 text-green-600 hover:bg-green-200')
-                                                    : (isDark ? 'bg-gray-500/20 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed')
+                                                ? (isDark ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : 'bg-green-100 text-green-600 hover:bg-green-200')
+                                                : (isDark ? 'bg-gray-500/20 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed')
                                                 }`}
                                             title={client.phone ? `WhatsApp ${client.phone}` : 'No phone number'}
                                         >
@@ -609,8 +632,8 @@ export const ClientManagement = ({ isDark }) => {
                                         <button
                                             onClick={() => { setEditingClient(client); setShowForm(true); }}
                                             className={`p-3 rounded-xl transition-colors ${isDark
-                                                    ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30'
-                                                    : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                                                ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30'
+                                                : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
                                                 }`}
                                             title="Edit client"
                                         >
@@ -619,8 +642,8 @@ export const ClientManagement = ({ isDark }) => {
                                         <button
                                             onClick={() => handleDelete(client.id)}
                                             className={`p-3 rounded-xl transition-colors ${isDark
-                                                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                                                    : 'bg-red-100 text-red-600 hover:bg-red-200'
+                                                ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                                                : 'bg-red-100 text-red-600 hover:bg-red-200'
                                                 }`}
                                             title="Deactivate client"
                                         >

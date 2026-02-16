@@ -1,12 +1,32 @@
 {
+  "name": "kairo-backend",
+  "version": "1.0.0",
+  "description": "KAIRO Backend with WhatsApp Bot",
+  "main": "whatsapp-service.js",
+  "scripts": {
+    "start": "node whatsapp-service.js",
+    "dev": "nodemon whatsapp-service.js"
+  },
+  "keywords": [
+    "whatsapp",
+    "bot",
+    "tax",
+    "ai"
+  ],
+  "license": "MIT",
   "devDependencies": {
     "autoprefixer": "^10.4.23",
     "postcss": "^8.5.6",
-    "tailwindcss": "^4.1.18"
+    "tailwindcss": "^4.1.18",
+    "nodemon": "^3.0.0"
   },
   "dependencies": {
     "axios": "^1.13.2",
     "framer-motion": "^12.23.26",
-    "lucide-react": "^0.562.0"
+    "lucide-react": "^0.562.0",
+    "whatsapp-web.js": "^1.34.4",
+    "qrcode-terminal": "^0.12.0",
+    "dotenv": "^16.0.0",
+    "express": "^4.18.0"
   }
 }

@@ -1,10 +1,10 @@
 # backend/main.py
 # -----------------------------------------------------------------------------
-# TAX.AI ENTERPRISE BACKEND - JARVIS EDITION 3.0
+# KAIRO ENTERPRISE BACKEND - JARVIS EDITION 3.0
 # Multi-Model Architecture: Qwen2.5-VL (OCR) + Hermes 3 (Logic) + Llama 3.1 (Chat)
 # -----------------------------------------------------------------------------
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -30,9 +30,37 @@ from ai_config import (
     call_vision_model,       # Qwen2.5-VL for OCR
     call_logic_model,        # Hermes 3 405B for reasoning
     call_chat_model,         # Llama 3.1 405B for chat
+    call_fast_chat_model,    # Llama 3.2 8B for FAST chat (NEW)
     clean_json_response,
     encode_image_to_base64
 )
+
+# --- AUTHENTICATION MODULE ---
+from auth import (
+    authenticate_user,
+    create_user,
+    get_current_user,
+    verify_token,
+    update_user_preferences,
+    get_user_by_whatsapp,
+    update_user_whatsapp,
+    remove_user_whatsapp
+)
+
+# --- WHATSAPP INTEGRATION ---
+from whatsapp_notifications import (
+    send_whatsapp_message,
+    send_whatsapp_media,
+    check_whatsapp_status
+)
+
+# --- AUTH DEPENDENCIES FOR ENDPOINTS ---
+from auth_dependencies import (
+    get_user_id_from_token,
+    get_current_user_from_header,
+    get_current_user_from_token
+)
+from fastapi import Depends
 
 # Legacy flag - some code may check this
 GEN_AI_AVAILABLE = True
@@ -257,7 +285,7 @@ UPLOAD_DIR = "uploads"
 os.makedirs(BACKUP_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-app = FastAPI(title="Tax.AI Audit Engine", version="3.0")
+app = FastAPI(title="KAIRO Audit Engine", version="3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -291,7 +319,7 @@ class ManualInvoice(InvoiceUpdate):
 
 class SearchQuery(BaseModel):
     query: str
-    context: Optional[dict] = None  # {current_tab, selected_client, client_id}
+    context: Optional[dict] = None  # {current_tab, selected_client, client_id, username}
 
 class ClientCreate(BaseModel):
     company_name: str
@@ -558,6 +586,8 @@ def init_db():
     if 'ledger_name' not in columns: cursor.execute('ALTER TABLE invoices ADD COLUMN ledger_name TEXT')
     if 'group_name' not in columns: cursor.execute('ALTER TABLE invoices ADD COLUMN group_name TEXT')
     if 'client_id' not in columns: cursor.execute('ALTER TABLE invoices ADD COLUMN client_id INTEGER')
+    # CRITICAL: Add user_id for multi-tenant data isolation
+    if 'user_id' not in columns: cursor.execute('ALTER TABLE invoices ADD COLUMN user_id INTEGER')
 
     # ========================================================================
     # CREATE INDEXES FOR PERFORMANCE
@@ -571,6 +601,8 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_comm_client ON communications(client_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vendors_name ON vendors(vendor_name)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(company_name)')
+    # CRITICAL: Index for multi-tenant isolation
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoices_user ON invoices(user_id)')
 
     conn.commit()
     conn.close()
@@ -1283,7 +1315,7 @@ def check_itc_eligibility(invoice_data: dict, doc_type: str) -> dict:
 # TALLY GUARD - STRICT EXPORT VALIDATION
 # ============================================================================
 
-def sanitize_for_tally(invoices: list) -> list:
+async def sanitize_for_tally(invoices: list) -> list:
     """
     TALLY GUARD - Gatekeeper that ensures 100% Tally compatibility
     
@@ -1357,6 +1389,10 @@ def sanitize_for_tally(invoices: list) -> list:
         clean['sgst_amount'] = sgst
         
         # GST-specific fields (CRITICAL for Tally GST compliance)
+        # Detect HSN and Ledger using AI/Rules
+        hsn_info = await detect_hsn_ledger_group(inv)
+        
+        inv['hsn_code'] = hsn_info.get('hsn_code', '')
         clean['gst_no'] = inv.get('gst_no', '')
         clean['hsn_code'] = inv.get('hsn_code', '')
         clean['vendor_state'] = inv.get('vendor_state', '')
@@ -1569,10 +1605,10 @@ def format_tally_date(date_str: str) -> str:
     # Fallback to today
     return datetime.now().strftime('%Y%m%d')
 
-def determine_gst_rate(invoice_data: dict) -> int:
+async def determine_gst_rate(invoice_data: dict) -> int:
     """
-    Determine the GST rate from invoice data
-    Returns integer rate (e.g., 18, 12, 5, 0)
+    Intelligent GST Rate Determination logic.
+    Uses HSN code, Item Description, and AI to find correct rate.
     """
     cgst = safe_float(invoice_data.get('cgst_amount', 0))
     sgst = safe_float(invoice_data.get('sgst_amount', 0))
@@ -1917,7 +1953,7 @@ def validate_before_export(invoices: list, voucher_type: str = "Purchase",
     return result
 
 
-def generate_gst_tally_xml(invoices: list, company_name: str = "ABC Traders", 
+async def generate_gst_tally_xml(invoices: list, company_name: str = "ABC Traders", 
                            voucher_type: str = "Purchase", company_state: str = "Delhi") -> bytes:
     """
     Generate Tally-compatible GST voucher XML (GOLD STANDARD)
@@ -1937,7 +1973,7 @@ def generate_gst_tally_xml(invoices: list, company_name: str = "ABC Traders",
         UTF-8 encoded XML bytes
     """
     # Validate and clean invoices
-    clean_invoices = sanitize_for_tally(invoices)
+    clean_invoices = await sanitize_for_tally(invoices)
     
     if not clean_invoices:
         # Return empty but valid structure
@@ -2044,7 +2080,7 @@ def generate_gst_tally_xml(invoices: list, company_name: str = "ABC Traders",
         sgst = safe_float(inv.get('sgst_amount', 0))
         
         # Determine GST rate
-        gst_rate = determine_gst_rate(inv)
+        gst_rate = await determine_gst_rate(inv)
         half_rate = gst_rate // 2
         
         # Determine if IGST or CGST+SGST based on place of supply
@@ -2145,7 +2181,7 @@ def generate_gst_tally_xml(invoices: list, company_name: str = "ABC Traders",
 
 @app.post("/search/ai")
 async def ai_search(query: SearchQuery):
-    print(f"🤖 Tax.AI analyzing: {query.query}")
+    print(f"🤖 KAIRO analyzing: {query.query}")
     print(f"   Context: {query.context}")
     
     # Get context info
@@ -2489,7 +2525,7 @@ async def ai_search(query: SearchQuery):
         if 'help' in user_query:
             return {
                 "explanation": '''
-🌟 **Tax.AI Help**
+🌟 **KAIRO Help**
 
 I can help you with:
 • **Go to Dashboard** - See your business summary
@@ -2524,11 +2560,20 @@ Just type what you need in simple words!
     - You can claim only 5% extra over what appears in GSTR-2B
     '''
     
+    # Get username for personalization
+    user_name = query.context.get('username', 'User') if query.context else 'User'
+    
     # =========================================================================
-    # AI PROMPT FOR COMPLEX QUERIES
+    # AI PROMPT FOR COMPLEX QUERIES (PERSONALIZED)
     # =========================================================================
     prompt = f"""
-    You are Tax.AI, a friendly assistant for Indian accountants.
+    You are KAIRO, a friendly personal assistant for {user_name}, an Indian accountant.
+    
+    IMPORTANT PERSONALIZATION RULES:
+    - Address the user by name "{user_name}" in a warm, professional manner
+    - Use greetings like "Hello {user_name}! 👋" or "Hi {user_name}!"
+    - Keep responses friendly and personable
+    - Act like a trusted colleague who knows them by name
     
     Current Page: {current_tab}
     Selected Client: {selected_client or 'None'}
@@ -2547,20 +2592,56 @@ Just type what you need in simple words!
     3. If explaining, start with "EXPLAIN:" and be brief
     4. Add Hindi words occasionally if natural (like "aapke paas", "yeh feature")
     5. Use emojis to make responses friendly
+    6. ALWAYS address {user_name} by name at the start of explanations
     
     If returning SQL, output ONLY the query starting with SELECT.
     """
     
+    
     try:
-        # Use Llama 3.1 405B for natural language chat
-        ai_response = call_chat_model(prompt)
+        # =====================================================================
+        # SMART MODEL ROUTING - Use fast model for simple queries
+        # =====================================================================
+        
+        # Detect if query is simple or complex
+        query_lower = user_query.lower()
+        word_count = len(user_query.split())
+        
+        # Simple query indicators: short, no complex keywords
+        complex_keywords = [
+            'analyze', 'calculate', 'explain in detail', 'legal', 'section',
+            'compliance', 'regulation', 'implications', 'breakdown', 
+            'show me all', 'list all', 'detailed'
+        ]
+        
+        has_complex_keyword = any(keyword in query_lower for keyword in complex_keywords)
+        is_sql_query = any(word in query_lower for word in ['show', 'list', 'find', 'how many', 'total'])
+        
+        # Use fast model if:
+        # - Query is short (< 20 words) AND
+        # - No complex keywords AND
+        # - Not asking for data/SQL
+        is_simple_query = (
+            word_count < 20 and 
+            not has_complex_keyword and 
+            not is_sql_query
+        )
+        
+        # Route to appropriate model
+        if is_simple_query:
+            print(f"⚡ Using FAST model (Llama 3.2 8B) for simple query")
+            ai_response = await call_fast_chat_model(prompt, max_tokens=512)
+        else:
+            print(f"🧠 Using COMPLEX model (Llama 3.1 405B) for detailed analysis")
+            ai_response = await call_chat_model(prompt)
+        
         ai_response = ai_response.replace("```sql", "").replace("```", "").strip()
 
         
         # Check if it's an explanation
         if ai_response.upper().startswith("EXPLAIN:"):
             explanation = ai_response.replace("EXPLAIN:", "").strip()
-            print(f"💡 Tax.AI Explanation: {explanation[:100]}...")
+            print(f"💡 KAIRO Explanation: {explanation[:100]}...")
             return {"explanation": explanation, "type": "help"}
         
         # Security Check for SQL
@@ -2605,10 +2686,37 @@ Just type what you need in simple words!
 # --- API ENDPOINTS ---
 
 @app.get("/history")
-async def get_history():
+async def get_history(
+    authorization: str = Header(None)
+):
+    """
+    Get invoice history for the current authenticated user.
+    CRITICAL: Filters by user_id for multi-tenant data isolation.
+    Returns empty array if user is not authenticated (allows graceful frontend behavior).
+    """
+    # Try to get user_id from authorization header
+    user_id = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+        try:
+            from auth import verify_token
+            payload = verify_token(token)
+            user_id = payload.get("user_id") if payload else None
+        except:
+            pass
+    
     conn = get_db_connection()
     try:
-        invoices = conn.execute("SELECT * FROM invoices ORDER BY id DESC").fetchall()
+        # If no user_id (not authenticated), return empty array gracefully
+        if user_id is None:
+            print("⚠️ /history called without authentication - returning empty array")
+            return []
+        
+        # CRITICAL: Filter by user_id to prevent cross-user data access
+        invoices = conn.execute(
+            "SELECT * FROM invoices WHERE user_id = ? ORDER BY id DESC",
+            (user_id,)
+        ).fetchall()
         results = []
         for row in invoices:
             try:
@@ -2625,8 +2733,11 @@ async def get_history():
                     data['group_name'] = row['group_name']
                 results.append(data)
             except: continue
+        print(f"✅ /history returned {len(results)} invoices for user_id={user_id}")
         return results
-    except: return []
+    except Exception as e:
+        print(f"❌ /history error: {e}")
+        return []
     finally: conn.close()
 
 @app.post("/upload")
@@ -2634,13 +2745,16 @@ async def process_invoice(
     file: UploadFile = File(...),
     client_id: int = None,
     doc_type: str = "gst_invoice",
-    entered_by: str = None
+    entered_by: str = None,
+    user_id: int = Depends(get_user_id_from_token)  # CRITICAL: User authentication
 ):
     """
     Enhanced upload with client selection and document type classification
     Supports: gst_invoice, bank_statement, payment_receipt, expense_bill, credit_note
+    CRITICAL: Now requires authentication and saves user_id for data isolation.
     """
     print(f"\n📥 Processing: {file.filename}")
+    print(f"   User ID: {user_id}")  # Log user for audit trail
     print(f"   Client ID: {client_id}")
     print(f"   Document Type: {doc_type}")
     print(f"   Entered By: {entered_by}")
@@ -2735,16 +2849,17 @@ async def process_invoice(
     new_id = cursor.lastrowid
     
     # Also insert into legacy invoices table for backward compatibility
+    # CRITICAL: Include user_id for multi-tenant data isolation
     cursor.execute('''
         INSERT INTO invoices (
             invoice_no, gst_no, invoice_date, vendor_name, grand_total, json_data, 
-            file_path, hsn_code, ledger_name, group_name, client_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            file_path, hsn_code, ledger_name, group_name, client_id, user_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         data.get('invoice_no'), data.get('gst_no'), data.get('invoice_date'),
         data.get('vendor_name'), data.get('grand_total'), json.dumps(data),
         file_path, data.get('hsn_code'), data.get('ledger_name'), data.get('group_name'),
-        client_id
+        client_id, user_id  # CRITICAL: Save user_id
     ))
     conn.commit()
     
@@ -2888,8 +3003,13 @@ async def bulk_upload_async_endpoint(
 
 
 @app.post("/manual")
-async def create_manual_invoice(inv: ManualInvoice):
-    data = inv.dict()
+async def add_manual(
+    invoice: ManualInvoice,
+    user_id: int = Depends(get_user_id_from_token)
+):
+    """Manual invoice entry - requires authentication and saves user_id"""
+    data = invoice.dict()
+    data = check_calculations(data)
     data['gst_status'] = "Manual Entry"
     data['math_status'] = "Manual"
     
@@ -2906,8 +3026,10 @@ async def create_manual_invoice(inv: ManualInvoice):
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO invoices (invoice_no, gst_no, invoice_date, vendor_name, grand_total, json_data, is_manual, hsn_code, ledger_name, group_name) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)", 
-                   (data.get('invoice_no'), data.get('gst_no'), data.get('invoice_date'), data.get('vendor_name'), data.get('grand_total'), json.dumps(data), data.get('hsn_code'), data.get('ledger_name'), data.get('group_name')))
+    cursor.execute(
+        "INSERT INTO invoices (invoice_no, gst_no, invoice_date, vendor_name, grand_total, json_data, is_manual, hsn_code, ledger_name, group_name, user_id) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)", 
+        (data.get('invoice_no'), data.get('gst_no'), data.get('invoice_date'), data.get('vendor_name'), data.get('grand_total'), json.dumps(data), data.get('hsn_code'), data.get('ledger_name'), data.get('group_name'), user_id)
+    )
     conn.commit()
     new_id = cursor.lastrowid
     conn.close()
@@ -2915,11 +3037,25 @@ async def create_manual_invoice(inv: ManualInvoice):
     return data
 
 @app.put("/invoice/{invoice_id}")
-async def update_invoice(invoice_id: int, update_data: InvoiceUpdate):
+async def update_invoice(
+    invoice_id: int, 
+    update_data: InvoiceUpdate,
+    user_id: int = Depends(get_user_id_from_token)  # CRITICAL: User authentication
+):
+    """
+    Update invoice
+    CRITICAL: Verifies user owns the invoice before allowing updates.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
-    row = cursor.execute("SELECT json_data FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
-    if not row: raise HTTPException(status_code=404)
+    # CRITICAL: Verify ownership - only allow user to update their own invoices
+    row = cursor.execute(
+        "SELECT json_data FROM invoices WHERE id = ? AND user_id = ?", 
+        (invoice_id, user_id)
+    ).fetchone()
+    if not row: 
+        conn.close()
+        raise HTTPException(status_code=404, detail="Invoice not found or access denied")
     current_data = json.loads(row['json_data'])
     updates = update_data.dict(exclude_unset=True)
     current_data.update(updates)
@@ -2938,15 +3074,31 @@ async def update_invoice(invoice_id: int, update_data: InvoiceUpdate):
     return current_data
 
 @app.delete("/invoice/{invoice_id}")
-async def delete_invoice(invoice_id: int):
+async def delete_invoice(
+    invoice_id: int,
+    user_id: int = Depends(get_user_id_from_token)
+):
+    """
+    Delete invoice
+    CRITICAL: Verifies user owns the invoice before allowing deletion.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
-    row = cursor.execute("SELECT file_path FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
-    if row and row['file_path'] and os.path.exists(row['file_path']): os.remove(row['file_path'])
+    # CRITICAL: Verify ownership before deletion
+    row = cursor.execute(
+        "SELECT file_path FROM invoices WHERE id = ? AND user_id = ?",
+        (invoice_id, user_id)
+    ).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Invoice not found or access denied")
+    # Delete file if it exists
+    if row['file_path'] and os.path.exists(row['file_path']): 
+        os.remove(row['file_path'])
     cursor.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
     conn.commit()
     conn.close()
-    return {"status": "success"}
+    return {"status": "success", "id": invoice_id}
 
 @app.get("/export/tally")
 async def export_tally_xml(
@@ -3063,7 +3215,7 @@ async def export_gst_tally_xml_endpoint(
                 )
         
         # ===== GENERATE XML (only if validation passed) =====
-        xml_content = generate_gst_tally_xml(
+        xml_content = await generate_gst_tally_xml(
             invoices=invoices,
             company_name=company_name,
             voucher_type=voucher_type,
@@ -3099,13 +3251,19 @@ async def preview_gst_tally_xml(
     try:
         rows = conn.execute("SELECT json_data FROM invoices LIMIT 3").fetchall()
         invoices = [json.loads(row['json_data']) for row in rows if row['json_data']]
-        
-        xml_content = generate_gst_tally_xml(
-            invoices=invoices,
-            company_name=company_name,
-            voucher_type=voucher_type,
-            company_state=company_state
-        )
+       # Generate XML
+        try:
+            xml_content = await generate_gst_tally_xml(
+                invoices, 
+                company_name=company_name, 
+                company_state=company_state,
+                voucher_type=voucher_type # Added voucher_type to match original signature
+            )
+            print(f"✅ Generated Tally XML: {len(invoices)} vouchers")
+        except Exception as e:
+            # Handle potential errors during XML generation for preview
+            print(f"❌ Error generating preview XML: {e}")
+            raise HTTPException(status_code=500, detail=f"Error generating preview XML: {e}")
         
         return {
             "status": "success",
@@ -3412,7 +3570,7 @@ TEMPLATES = [
 ]
 
 @app.get("/communications/scheduled")
-async def get_scheduled_communications():
+async def get_scheduled_communications(user_id: int = Depends(get_user_id_from_token)):
     """Get today's scheduled communications from database"""
     conn = get_db_connection()
     try:
@@ -3420,11 +3578,13 @@ async def get_scheduled_communications():
         comms = conn.execute('''
             SELECT c.*, cl.company_name as client_name, cl.phone as client_phone
             FROM communications c
-            LEFT JOIN clients cl ON c.client_id = cl.id
-            WHERE c.status = 'scheduled' AND DATE(c.scheduled_time) <= DATE('now', '+1 day')
+            JOIN clients cl ON c.client_id = cl.id
+            WHERE c.status = 'scheduled' 
+            AND DATE(c.scheduled_time) <= DATE('now', '+1 day')
+            AND cl.user_id = ?
             ORDER BY c.scheduled_time ASC
             LIMIT 20
-        ''').fetchall()
+        ''', (user_id,)).fetchall()
         
         results = []
         for comm in comms:
@@ -3447,17 +3607,18 @@ async def get_scheduled_communications():
         conn.close()
 
 @app.get("/communications/recent")
-async def get_recent_communications():
+async def get_recent_communications(user_id: int = Depends(get_user_id_from_token)):
     """Get recent communication history from database"""
     conn = get_db_connection()
     try:
         comms = conn.execute('''
             SELECT c.*, cl.company_name as client_name, cl.phone as client_phone
             FROM communications c
-            LEFT JOIN clients cl ON c.client_id = cl.id
+            JOIN clients cl ON c.client_id = cl.id
+            WHERE cl.user_id = ?
             ORDER BY c.sent_date DESC
             LIMIT 20
-        ''').fetchall()
+        ''', (user_id,)).fetchall()
         
         results = []
         for comm in comms:
@@ -3690,30 +3851,35 @@ async def schedule_call(data: dict):
         conn.close()
 
 @app.get("/communications/analytics")
-async def get_communication_analytics():
+async def get_communication_analytics(user_id: int = Depends(get_user_id_from_token)):
     """Get real communication statistics from database"""
     conn = get_db_connection()
     try:
-        # Count by channel
+        # Count by channel for authenticated user
         whatsapp_count = conn.execute(
-            "SELECT COUNT(*) as count FROM communications WHERE channel = 'whatsapp'"
+            "SELECT COUNT(*) as count FROM communications c JOIN clients cl ON c.client_id = cl.id WHERE c.channel = 'whatsapp' AND cl.user_id = ?",
+            (user_id,)
         ).fetchone()['count']
         
         email_count = conn.execute(
-            "SELECT COUNT(*) as count FROM communications WHERE channel = 'email'"
+            "SELECT COUNT(*) as count FROM communications c JOIN clients cl ON c.client_id = cl.id WHERE c.channel = 'email' AND cl.user_id = ?",
+            (user_id,)
         ).fetchone()['count']
         
         sms_count = conn.execute(
-            "SELECT COUNT(*) as count FROM communications WHERE channel = 'sms'"
+            "SELECT COUNT(*) as count FROM communications c JOIN clients cl ON c.client_id = cl.id WHERE c.channel = 'sms' AND cl.user_id = ?",
+            (user_id,)
         ).fetchone()['count']
         
         call_count = conn.execute(
-            "SELECT COUNT(*) as count FROM communications WHERE channel = 'call'"
+            "SELECT COUNT(*) as count FROM communications c JOIN clients cl ON c.client_id = cl.id WHERE c.channel = 'call' AND cl.user_id = ?",
+            (user_id,)
         ).fetchone()['count']
         
-        # Today's counts
+        # Today's counts for authenticated user
         today_total = conn.execute(
-            "SELECT COUNT(*) as count FROM communications WHERE DATE(sent_date) = DATE('now')"
+            "SELECT COUNT(*) as count FROM communications c JOIN clients cl ON c.client_id = cl.id WHERE DATE(c.sent_date) = DATE('now') AND cl.user_id = ?",
+            (user_id,)
         ).fetchone()['count']
         
         return {
@@ -3790,12 +3956,17 @@ print("   GET  /communications/analytics")
 # ============================================================================
 
 @app.get("/clients")
-async def get_clients(status: str = None, search: str = None):
-    """Get all clients with optional filtering"""
+async def get_clients(
+    status: str = None, 
+    search: str = None,
+    user_id: int = Depends(get_user_id_from_token)
+):
+    """Get all clients for the authenticated user with optional filtering"""
     conn = get_db_connection()
     try:
-        query = "SELECT * FROM clients WHERE 1=1"
-        params = []
+        # CRITICAL: Filter by user_id for multi-tenant isolation
+        query = "SELECT * FROM clients WHERE user_id = ?"
+        params = [user_id]
         
         if status:
             query += " AND status = ?"
@@ -3846,23 +4017,26 @@ async def get_client(client_id: int):
         conn.close()
 
 @app.post("/clients")
-async def create_client(client: ClientCreate):
-    """Create new client"""
+async def create_client(
+    client: ClientCreate,
+    user_id: int = Depends(get_user_id_from_token)
+):
+    """Create new client for the authenticated user"""
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO clients (company_name, gstin, pan, contact_person, phone, email, 
-                                address, city, state, financial_year_start, client_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                address, city, state, financial_year_start, client_type, user_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             client.company_name, client.gstin, client.pan, client.contact_person,
             client.phone, client.email, client.address, client.city, client.state,
-            client.financial_year_start, client.client_type
+            client.financial_year_start, client.client_type, user_id
         ))
         conn.commit()
         new_id = cursor.lastrowid
-        print(f"✅ Client created: {client.company_name} (ID: {new_id})")
+        print(f"✅ Client created: {client.company_name} (ID: {new_id}) for user_id: {user_id}")
         return {"id": new_id, "status": "success", "message": "Client created successfully"}
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=400, detail="Client with this name already exists")
@@ -4182,11 +4356,17 @@ async def analyze_legal_notice(
 
 Return as JSON only, no markdown."""
             
-            print("🔍 Extracting notice details with Qwen2.5-VL...")
-            extraction_response = call_vision_model(b64_data, extraction_prompt, file.content_type)
+            # 1. OCR Extraction (Vision Model)
+            print("running vision model...")
+            try:
+                extracted_text = await call_vision_model(b64_data, extraction_prompt, file.content_type)
+                print("vision model success")
+            except Exception as e:
+                print(f"❌ Vision model failed: {e}")
+                extracted_text = "" # Or handle as appropriate, e.g., re-raise or return error
             
             # Parse extraction response
-            extraction_text = clean_json_response(extraction_response)
+            extraction_text = clean_json_response(extracted_text)
             
             try:
                 notice_details = json.loads(extraction_text)
@@ -4301,7 +4481,7 @@ Keep the tone formal and respectful. Use proper legal formatting."""
         }
 
 @app.get("/legal/notices")
-async def get_legal_notices(client_id: int = None):
+async def get_legal_notices(client_id: int = None, user_id: int = Depends(get_user_id_from_token)):
     """Get all legal notices, optionally filtered by client"""
     conn = get_db_connection()
     try:
@@ -4327,15 +4507,21 @@ async def get_legal_notices(client_id: int = None):
             )
         ''')
         
+        # Base query joining with clients to filter by user_id
+        query = """
+            SELECT n.* FROM legal_notices n
+            JOIN clients c ON n.client_id = c.id
+            WHERE c.user_id = ?
+        """
+        params = [user_id]
+        
         if client_id:
-            notices = conn.execute(
-                "SELECT * FROM legal_notices WHERE client_id = ? ORDER BY created_at DESC",
-                (client_id,)
-            ).fetchall()
-        else:
-            notices = conn.execute(
-                "SELECT * FROM legal_notices ORDER BY created_at DESC"
-            ).fetchall()
+            query += " AND n.client_id = ?"
+            params.append(client_id)
+            
+        query += " ORDER BY n.created_at DESC"
+        
+        notices = conn.execute(query, params).fetchall()
         
         result = []
         for n in notices:
@@ -4370,13 +4556,17 @@ async def get_legal_notices(client_id: int = None):
         conn.close()
 
 @app.get("/legal/notice/{notice_id}")
-async def get_notice_detail(notice_id: int):
+async def get_notice_detail(notice_id: int, user_id: int = Depends(get_user_id_from_token)):
     """Get detailed view of a specific notice including draft reply"""
     conn = get_db_connection()
     try:
         notice = conn.execute(
-            "SELECT * FROM legal_notices WHERE id = ?",
-            (notice_id,)
+            """
+            SELECT n.* FROM legal_notices n
+            JOIN clients c ON n.client_id = c.id
+            WHERE n.id = ? AND c.user_id = ?
+            """,
+            (notice_id, user_id)
         ).fetchone()
         
         if not notice:
@@ -5054,29 +5244,29 @@ async def bulk_assign_documents(doc_ids: list, client_id: int):
         conn.close()
 
 @app.get("/triage/stats")
-async def get_triage_stats():
+async def get_triage_stats(user_id: int = Depends(get_user_id_from_token)):
     """Get statistics for Triage Area (Unassigned Documents)"""
     conn = get_db_connection()
     try:
-        # Count unassigned documents
-        docs_count = conn.execute("SELECT COUNT(*) as count FROM documents WHERE client_id IS NULL").fetchone()['count']
-        invoices_count = conn.execute("SELECT COUNT(*) as count FROM invoices WHERE client_id IS NULL").fetchone()['count']
+        # Count unassigned documents for authenticated user
+        docs_count = conn.execute("SELECT COUNT(*) as count FROM documents WHERE client_id IS NULL AND user_id = ?", (user_id,)).fetchone()['count']
+        invoices_count = conn.execute("SELECT COUNT(*) as count FROM invoices WHERE client_id IS NULL AND user_id = ?", (user_id,)).fetchone()['count']
         
-        # Get age breakdown
+        # Get age breakdown for authenticated user
         today_count = conn.execute('''
             SELECT COUNT(*) as count FROM invoices 
-            WHERE client_id IS NULL AND DATE(upload_date) = DATE('now')
-        ''').fetchone()['count']
+            WHERE client_id IS NULL AND DATE(upload_date) = DATE('now') AND user_id = ?
+        ''', (user_id,)).fetchone()['count']
         
         week_count = conn.execute('''
             SELECT COUNT(*) as count FROM invoices 
-            WHERE client_id IS NULL AND DATE(upload_date) >= DATE('now', '-7 days')
-        ''').fetchone()['count']
+            WHERE client_id IS NULL AND DATE(upload_date) >= DATE('now', '-7 days') AND user_id = ?
+        ''', (user_id,)).fetchone()['count']
         
         old_count = conn.execute('''
             SELECT COUNT(*) as count FROM invoices 
-            WHERE client_id IS NULL AND DATE(upload_date) < DATE('now', '-7 days')
-        ''').fetchone()['count']
+            WHERE client_id IS NULL AND DATE(upload_date) < DATE('now', '-7 days') AND user_id = ?
+        ''', (user_id,)).fetchone()['count']
         
         return {
             "total_unassigned": docs_count + invoices_count,
@@ -5184,7 +5374,7 @@ GROUP_MAPPING = {
     "box": "Packing Materials",
 }
 
-def detect_hsn_ledger_group(invoice_data: dict) -> dict:
+async def detect_hsn_ledger_group(invoice_data: dict) -> dict:
     """
     AI-powered detection of HSN, Ledger, and Group from invoice data
     Uses multiple intelligence sources:
@@ -5233,7 +5423,7 @@ def detect_hsn_ledger_group(invoice_data: dict) -> dict:
     
     # Use Gemini AI for smart guessing if still missing
     if not hsn_code or not ledger_name or not group_name:
-        ai_suggestions = gemini_smart_classify(vendor_name, party_name, description)
+        ai_suggestions = await gemini_smart_classify(vendor_name, party_name, description)
         if not hsn_code:
             hsn_code = ai_suggestions.get('hsn_code', '999999')  # Default: Unclassified
         if not ledger_name:
@@ -5256,7 +5446,7 @@ def detect_hsn_ledger_group(invoice_data: dict) -> dict:
         'ai_confidence': 'high' if hsn_code in HSN_CODES_DB else 'medium' if hsn_code != '999999' else 'low'
     }
 
-def gemini_smart_classify(vendor_name: str, party_name: str, description: str) -> dict:
+async def gemini_smart_classify(vendor_name: str, party_name: str, description: str) -> dict:
     """
     Use Gemini AI to intelligently classify the invoice
     when HSN/Ledger/Group cannot be determined from rules
@@ -5291,7 +5481,7 @@ Return ONLY JSON format:
 
         # Use Hermes 3 405B for HSN/ledger classification (reasoning task)
         print("🏷️ Classifying with Hermes 3 405B...")
-        response = call_logic_model(prompt)
+        response = await call_logic_model(prompt)
         
         # Extract JSON from response
         text = clean_json_response(response)
@@ -5332,7 +5522,7 @@ async def analyze_notice(file: UploadFile = File(...)):
 
         # 2. Analyze with Gemini
         prompt = f"""
-        You are an Expert GST Legal Consultant (Tax.AI).
+        You are an Expert GST Legal Consultant (KAIRO).
         Analyze this government GST notice text and draft a legal reply.
         
         Notice Text:
@@ -5356,7 +5546,7 @@ async def analyze_notice(file: UploadFile = File(...)):
         
         # Use Hermes 3 405B for notice analysis (legal reasoning task)
         print("📋 Analyzing notice with Hermes 3 405B...")
-        ai_response = call_logic_model(prompt)
+        ai_response = await call_logic_model(prompt)
         ai_response = ai_response.replace("```json", "").replace("```", "").strip()
         
         result = json.loads(ai_response)
@@ -5429,3 +5619,154 @@ async def get_gst_news_with_ai():
         }
 
 
+
+# =============================================================================
+# AUTHENTICATION ENDPOINTS
+# =============================================================================
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class RegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+    display_name: Optional[str] = None
+
+class PreferencesRequest(BaseModel):
+    preferences: dict
+
+@app.post("/auth/login")
+async def login(request: LoginRequest):
+    """
+    Authenticate user and return JWT token.
+    Default test user: rahul@example.com / password123
+    """
+    try:
+        result = authenticate_user(request.email, request.password)
+        
+        if not result:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+        
+        print(f"✅ User logged in: {result['email']}")
+        
+        return {
+            "success": True,
+            "user": {
+                "id": result["id"],
+                "username": result["username"],
+                "email": result["email"],
+                "display_name": result["display_name"],
+                "avatar_url": result.get("avatar_url"),
+                "preferences": result.get("preferences", {})
+            },
+            "token": result["token"]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Login error: {e}")
+        raise HTTPException(status_code=500, detail="Login failed")
+
+
+@app.post("/auth/register")
+async def register(request: RegisterRequest):
+    """Register a new user account."""
+    try:
+        if len(request.password) < 6:
+            raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+        
+        user = create_user(
+            username=request.username,
+            email=request.email,
+            password=request.password,
+            display_name=request.display_name
+        )
+        
+        # Auto-login after registration
+        result = authenticate_user(request.email, request.password)
+        
+        print(f"✅ New user registered: {user['email']}")
+        
+        return {
+            "success": True,
+            "user": {
+                "id": result["id"],
+                "username": result["username"],
+                "email": result["email"],
+                "display_name": result["display_name"],
+                "preferences": result.get("preferences", {})
+            },
+            "token": result["token"]
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"❌ Registration error: {e}")
+        raise HTTPException(status_code=500, detail="Registration failed")
+
+
+@app.get("/auth/me")
+async def get_me(authorization: str = None):
+    """Get current user from token."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # Extract token from "Bearer <token>"
+    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    
+    user = get_current_user(token)
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+    return {
+        "success": True,
+        "user": user
+    }
+
+
+@app.put("/auth/preferences")
+async def update_preferences(request: PreferencesRequest, authorization: str = None):
+    """Update user preferences (dark mode, notifications, etc.)."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    
+    payload = verify_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+    success = update_user_preferences(payload["user_id"], request.preferences)
+    
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update preferences")
+    
+    print(f"✅ Preferences updated for user {payload['user_id']}")
+    
+    return {
+        "success": True,
+        "preferences": request.preferences
+    }
+
+
+@app.post("/auth/logout")
+async def logout():
+    """Logout user (client-side token removal)."""
+    return {"success": True, "message": "Logged out successfully"}
+
+
+# =============================================================================
+# WHATSAPP INTEGRATION ENDPOINTS
+# =============================================================================
+
+# Import WhatsApp endpoints
+try:
+    from whatsapp_endpoints import *
+    print("✅ WhatsApp Integration endpoints loaded successfully!")
+except ImportError as e:
+    print(f"⚠️ WhatsApp endpoints not loaded: {e}")
+except Exception as e:
+    print(f"❌ Error loading WhatsApp endpoints: {e}")
