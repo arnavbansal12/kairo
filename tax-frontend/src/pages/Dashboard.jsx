@@ -4775,92 +4775,12 @@ function App({ currentUser = null, onLogout = () => { } }) {
 
 
 const Dashboard = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const { user, logout } = useAuth();
 
-  // Check for existing auth on mount
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const token = localStorage.getItem('taxai_token');
-        const savedUser = localStorage.getItem('taxai_user');
+  // Dashboard is now protected by APP router, so we can assume user is logged in
+  // or handle the null case gracefully if context is still loading (though ProtectedRoute handles that)
 
-        if (token && savedUser) {
-          // Optionally verify token with backend
-          try {
-            const response = await fetch('http://127.0.0.1:8000/auth/me', {
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (response.ok) {
-              const data = await response.json();
-              setCurrentUser(data.user);
-              setIsAuthenticated(true);
-            } else {
-              // Token invalid, but don't clear - user might just have backend down
-              const user = JSON.parse(savedUser);
-              setCurrentUser(user);
-              setIsAuthenticated(true);
-            }
-          } catch (e) {
-            // Backend might be down, use cached user
-            const user = JSON.parse(savedUser);
-            setCurrentUser(user);
-            setIsAuthenticated(true);
-          }
-        }
-      } catch (e) {
-        console.error('Auth check failed:', e);
-      } finally {
-        setAuthLoading(false);
-      }
-    };
-
-    checkAuth();
-  }, []);
-
-  // Handle login success
-  const handleLogin = (user, token) => {
-    setCurrentUser(user);
-    setIsAuthenticated(true);
-    localStorage.setItem('taxai_token', token);
-    localStorage.setItem('taxai_user', JSON.stringify(user));
-  };
-
-  // Handle logout
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    setCurrentUser(null);
-    localStorage.removeItem('taxai_token');
-    localStorage.removeItem('taxai_user');
-  };
-
-  // Loading state
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 flex items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center"
-        >
-          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-purple-500 to-blue-600 flex items-center justify-center">
-            <Sparkles className="w-8 h-8 text-white animate-pulse" />
-          </div>
-          <p className="text-white/60 text-sm">Loading KAIRO...</p>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Show login page if not authenticated
-  if (!isAuthenticated) {
-    return <LoginPage onLogin={handleLogin} />;
-  }
-
-  // Show main app if authenticated
-  return <App currentUser={currentUser} onLogout={handleLogout} />;
+  return <App currentUser={user} onLogout={logout} />;
 };
 
 export default Dashboard;

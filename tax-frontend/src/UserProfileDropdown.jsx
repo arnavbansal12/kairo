@@ -27,10 +27,8 @@ const UserProfileDropdown = ({
     };
 
     const handleLogout = () => {
-        if (window.confirm('Are you sure you want to sign out?')) {
-            onLogout();
-            onClose();
-        }
+        onLogout();
+        onClose();
     };
 
     if (!isOpen) return null;
@@ -50,8 +48,8 @@ const UserProfileDropdown = ({
                 exit={{ opacity: 0, scale: 0.95, y: -10 }}
                 transition={{ duration: 0.15 }}
                 className={`absolute top-14 right-0 z-[70] w-72 rounded-2xl shadow-2xl overflow-hidden border ${isDark
-                        ? 'bg-[#1a1a24]/95 backdrop-blur-xl border-white/10'
-                        : 'bg-white border-gray-100'
+                    ? 'bg-[#1a1a24]/95 backdrop-blur-xl border-white/10'
+                    : 'bg-white border-gray-100'
                     }`}
             >
                 {/* User Info Header */}
@@ -79,8 +77,8 @@ const UserProfileDropdown = ({
                             onClose();
                         }}
                         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${isDark
-                                ? 'text-gray-300 hover:bg-white/5 hover:text-white'
-                                : 'text-gray-700 hover:bg-gray-50'
+                            ? 'text-gray-300 hover:bg-white/5 hover:text-white'
+                            : 'text-gray-700 hover:bg-gray-50'
                             }`}
                     >
                         <User className="w-4 h-4" />
@@ -93,8 +91,8 @@ const UserProfileDropdown = ({
                             onClose();
                         }}
                         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${isDark
-                                ? 'text-gray-300 hover:bg-white/5 hover:text-white'
-                                : 'text-gray-700 hover:bg-gray-50'
+                            ? 'text-gray-300 hover:bg-white/5 hover:text-white'
+                            : 'text-gray-700 hover:bg-gray-50'
                             }`}
                     >
                         <Settings className="w-4 h-4" />
@@ -107,8 +105,8 @@ const UserProfileDropdown = ({
                             onClose();
                         }}
                         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${isDark
-                                ? 'text-gray-300 hover:bg-white/5 hover:text-white'
-                                : 'text-gray-700 hover:bg-gray-50'
+                            ? 'text-gray-300 hover:bg-white/5 hover:text-white'
+                            : 'text-gray-700 hover:bg-gray-50'
                             }`}
                     >
                         <Bell className="w-4 h-4" />
@@ -120,8 +118,8 @@ const UserProfileDropdown = ({
                     <button
                         onClick={() => setShowShortcuts(true)}
                         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${isDark
-                                ? 'text-gray-300 hover:bg-white/5 hover:text-white'
-                                : 'text-gray-700 hover:bg-gray-50'
+                            ? 'text-gray-300 hover:bg-white/5 hover:text-white'
+                            : 'text-gray-700 hover:bg-gray-50'
                             }`}
                     >
                         <Keyboard className="w-4 h-4" />
@@ -131,8 +129,8 @@ const UserProfileDropdown = ({
                     <button
                         onClick={() => window.open('https://taxai.help', '_blank')}
                         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${isDark
-                                ? 'text-gray-300 hover:bg-white/5 hover:text-white'
-                                : 'text-gray-700 hover:bg-gray-50'
+                            ? 'text-gray-300 hover:bg-white/5 hover:text-white'
+                            : 'text-gray-700 hover:bg-gray-50'
                             }`}
                     >
                         <HelpCircle className="w-4 h-4" />
@@ -145,8 +143,8 @@ const UserProfileDropdown = ({
                     <button
                         onClick={handleLogout}
                         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-colors ${isDark
-                                ? 'text-red-400 hover:bg-red-500/10'
-                                : 'text-red-600 hover:bg-red-50'
+                            ? 'text-red-400 hover:bg-red-500/10'
+                            : 'text-red-600 hover:bg-red-50'
                             }`}
                     >
                         <LogOut className="w-4 h-4" />
@@ -215,8 +213,8 @@ const KeyboardShortcutsModal = ({ isOpen, onClose, isDark }) => {
                                 {shortcut.desc}
                             </span>
                             <kbd className={`px-2 py-1 rounded text-xs font-mono ${isDark
-                                    ? 'bg-black/40 text-gray-300 border border-white/10'
-                                    : 'bg-white text-gray-700 border border-gray-200 shadow-sm'
+                                ? 'bg-black/40 text-gray-300 border border-white/10'
+                                : 'bg-white text-gray-700 border border-gray-200 shadow-sm'
                                 }`}>
                                 {shortcut.key}
                             </kbd>

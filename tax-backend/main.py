@@ -61,6 +61,7 @@ from auth_dependencies import (
     get_current_user_from_token
 )
 from fastapi import Depends
+import auth_routes
 
 # Legacy flag - some code may check this
 GEN_AI_AVAILABLE = True
@@ -294,6 +295,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_routes.router)
 
 app.mount("/files", StaticFiles(directory=UPLOAD_DIR), name="files")
 
